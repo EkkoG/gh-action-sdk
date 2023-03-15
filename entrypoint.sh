@@ -6,6 +6,10 @@ FEEDNAME="${FEEDNAME:-action}"
 BUILD_LOG="${BUILD_LOG:-1}"
 
 cd /home/build/openwrt/
+sudo apt update
+sudo apt install upx -y
+cp /usr/bin/upx /home/build/openwrt/staging_dir/host/bin/
+cp /usr/bin/upx-ucl /home/build/openwrt/staging_dir/host/bin/
 
 if [ -n "$KEY_BUILD" ]; then
 	echo "$KEY_BUILD" > key-build
