@@ -123,66 +123,69 @@ else
 			fi
 		fi
 
-		PATCHES_DIR=$(find /feed -path "*/$PKG/patches")
-		if [ -d "$PATCHES_DIR" ] && [ -z "$NO_REFRESH_CHECK" ]; then
-			group "make package/$PKG/refresh"
-			make \
-				BUILD_LOG="$BUILD_LOG" \
-				IGNORE_ERRORS="$IGNORE_ERRORS" \
-				"package/$PKG/refresh" V=s
-			endgroup
+		if [ -z "$FIXUP" ]; then
+			PATCHES_DIR=$(find /feed -path "*/$PKG/patches")
+			if [ -d "$PATCHES_DIR" ] && [ -z "$NO_REFRESH_CHECK" ]; then
+				group "make package/$PKG/refresh"
+				make \
+					BUILD_LOG="$BUILD_LOG" \
+					IGNORE_ERRORS="$IGNORE_ERRORS" \
+					"package/$PKG/refresh" V=s
+				endgroup
 
-			if ! git -C "$PATCHES_DIR" diff --quiet -- .; then
-				echo "Dirty patches detected, please refresh and review the diff"
-				git -C "$PATCHES_DIR" checkout -- .
-				exit 1
+				if ! git -C "$PATCHES_DIR" diff --quiet -- .; then
+					echo "Dirty patches detected, please refresh and review the diff"
+					git -C "$PATCHES_DIR" checkout -- .
+					exit 1
+				fi
+
+				group "make package/$PKG/clean"
+				make \
+					BUILD_LOG="$BUILD_LOG" \
+					IGNORE_ERRORS="$IGNORE_ERRORS" \
+					"package/$PKG/clean" V=s
+				endgroup
 			fi
 
-			group "make package/$PKG/clean"
-			make \
-				BUILD_LOG="$BUILD_LOG" \
-				IGNORE_ERRORS="$IGNORE_ERRORS" \
-				"package/$PKG/clean" V=s
-			endgroup
-		fi
-
-		FILES_DIR=$(find /feed -path "*/$PKG/files")
-		if [ -d "$FILES_DIR" ] && [ -z "$NO_SHFMT_CHECK" ]; then
-			find "$FILES_DIR" -name "*.init" -exec shfmt -w -sr -s '{}' \;
-			if ! git -C "$FILES_DIR" diff --quiet -- .; then
-				echo "init script must be formatted. Please run through shfmt -w -sr -s"
-				git -C "$FILES_DIR" checkout -- .
-				exit 1
+			FILES_DIR=$(find /feed -path "*/$PKG/files")
+			if [ -d "$FILES_DIR" ] && [ -z "$NO_SHFMT_CHECK" ]; then
+				find "$FILES_DIR" -name "*.init" -exec shfmt -w -sr -s '{}' \;
+				if ! git -C "$FILES_DIR" diff --quiet -- .; then
+					echo "init script must be formatted. Please run through shfmt -w -sr -s"
+					git -C "$FILES_DIR" checkout -- .
+					exit 1
+				fi
 			fi
 		fi
-
 	done
 
-	make \
-		-f .config \
-		-f tmp/.packagedeps \
-		-f <(echo "\$(info \$(sort \$(package-y) \$(package-m)))"; echo -en "a:\n\t@:") \
-			| tr ' ' '\n' > enabled-package-subdirs.txt
-
-	RET=0
-
-	for PKG in $PACKAGES; do
-		if ! grep -m1 -qE "(^|/)$PKG$" enabled-package-subdirs.txt; then
-			echo "::warning file=$PKG::Skipping $PKG due to unsupported architecture"
-			continue
-		fi
-
+	if [ -z "$FIXUP" ]; then
 		make \
-			BUILD_LOG="$BUILD_LOG" \
-			IGNORE_ERRORS="$IGNORE_ERRORS" \
-			CONFIG_AUTOREMOVE=y \
-			V="$V" \
-			-j "$(nproc)" \
-			"package/$PKG/compile" || {
-				RET=$?
-				break
-			}
-	done
+			-f .config \
+			-f tmp/.packagedeps \
+			-f <(echo "\$(info \$(sort \$(package-y) \$(package-m)))"; echo -en "a:\n\t@:") \
+				| tr ' ' '\n' > enabled-package-subdirs.txt
+
+		RET=0
+
+		for PKG in $PACKAGES; do
+			if ! grep -m1 -qE "(^|/)$PKG$" enabled-package-subdirs.txt; then
+				echo "::warning file=$PKG::Skipping $PKG due to unsupported architecture"
+				continue
+			fi
+
+			make \
+				BUILD_LOG="$BUILD_LOG" \
+				IGNORE_ERRORS="$IGNORE_ERRORS" \
+				CONFIG_AUTOREMOVE=y \
+				V="$V" \
+				-j "$(nproc)" \
+				"package/$PKG/compile" || {
+					RET=$?
+					break
+				}
+		done
+	fi
 fi
 
 if [ "$INDEX" = '1' ];then
